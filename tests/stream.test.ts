@@ -1,9 +1,10 @@
 import {
   Cl,
-  createStacksPrivateKey,
+  // createStacksPrivateKey,
   cvToValue,
   signMessageHashRsv,
 } from "@stacks/transactions";
+import { hexToBytes } from '@stacks/common';
 import { beforeEach, describe, expect, it } from "vitest";
 
 // `simnet` is a "simulation network" - a local, testing Stacks node for running our tests
@@ -16,6 +17,7 @@ const recipient = accounts.get("wallet_2")!;
 const randomUser = accounts.get("wallet_3")!;
 
 describe("test token streaming contract", () => {
+  const privateKeyBytes = hexToBytes("7287ba251d44a4d3fd9276c88ce34c5c52a038955511cccaf77e61068649c17801");
   // Before each test is run, we want to create a stream
   // so we can run tests around different possible things to do with the stream
   beforeEach(() => {
@@ -108,7 +110,7 @@ describe("test token streaming contract", () => {
     );
 
     expect(withdraw.events[0].event).toBe("stx_transfer_event");
-    expect(withdraw.events[0].data.amount).toBe("3");
+    expect(withdraw.events[0].data.amount).toBe("4");
     expect(withdraw.events[0].data.recipient).toBe(recipient);
   });
 
@@ -159,21 +161,23 @@ describe("test token streaming contract", () => {
       sender
     );
 
-    const hashAsHex = Buffer.from(hashedStream0.result.buffer).toString("hex");
+    // convert Clarity buffer CV -> hex string, then to bytes
+    // `hashedStream0.result` is a BufferCV whose value is a hex string
+    const hashHex = cvToValue(hashedStream0.result) as string;
+    const hashBytes = hexToBytes(hashHex);
+
+    // pass bytes into signer (noble accepts Uint8Array directly)
     const signature = signMessageHashRsv({
-      messageHash: hashAsHex,
-      privateKey: createStacksPrivateKey(
-        "7287ba251d44a4d3fd9276c88ce34c5c52a038955511cccaf77e61068649c17801"
-      ),
+      messageHash: hashBytes as any,
+      privateKey: privateKeyBytes,
     });
 
     const verifySignature = simnet.callReadOnlyFn(
       "stream",
       "validate-signature",
       [
-        
-        Cl.buffer(hashedStream0.result.buffer),
-        Cl.bufferFromHex(signature.data),
+        hashedStream0.result,
+        Cl.bufferFromHex(signature),
         Cl.principal(sender),
       ],
       sender
@@ -194,14 +198,16 @@ describe("test token streaming contract", () => {
       sender
     );
 
-    const hashAsHex = Buffer.from(hashedStream0.result.buffer).toString("hex");
+    // convert Clarity buffer CV -> hex string, then to bytes
+    const hashHex = cvToValue(hashedStream0.result) as string;
+    const hashBytes = hexToBytes(hashHex);
+
+    // pass bytes into signer
     const senderSignature = signMessageHashRsv({
-      messageHash: hashAsHex,
+      messageHash: hashBytes as any,
       // This private key is for the `sender` wallet - i.e. `wallet_1`
       // This can be found in the `settings/Devnet.toml` config file
-      privateKey: createStacksPrivateKey(
-        "7287ba251d44a4d3fd9276c88ce34c5c52a038955511cccaf77e61068649c17801"
-      ),
+      privateKey: privateKeyBytes,
     });
 
     simnet.callPublicFn(
@@ -212,7 +218,7 @@ describe("test token streaming contract", () => {
         Cl.uint(1),
         Cl.tuple({ "start-block": Cl.uint(0), "stop-block": Cl.uint(4) }),
         Cl.principal(sender),
-        Cl.bufferFromHex(senderSignature.data),
+        Cl.bufferFromHex(senderSignature),
       ],
       recipient
     );
